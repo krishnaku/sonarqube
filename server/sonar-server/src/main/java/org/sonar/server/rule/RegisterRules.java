@@ -24,7 +24,6 @@ import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -60,6 +59,8 @@ import org.sonar.server.rule.index.RuleIndexer;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Lists.newArrayList;
+import static com.google.common.collect.Sets.difference;
+import static com.google.common.collect.Sets.intersection;
 
 /**
  * Register rules at server startup
@@ -202,7 +203,7 @@ public class RegisterRules implements Startable {
     if (mergeDescription(def, dto)) {
       changed = true;
     }
-    if (!dto.getSystemTags().containsAll(def.tags())) {
+    if (!difference(dto.getSystemTags(), def.tags()).isEmpty()) {
       dto.setSystemTags(def.tags());
       changed = true;
     }
@@ -349,7 +350,7 @@ public class RegisterRules implements Startable {
       dto.setSystemTags(Collections.<String>emptySet());
       changed = true;
     } else if (!dto.getSystemTags().containsAll(ruleDef.tags())
-      || !Sets.intersection(dto.getTags(), ruleDef.tags()).isEmpty()) {
+      || !intersection(dto.getTags(), ruleDef.tags()).isEmpty()) {
       dto.setSystemTags(ruleDef.tags());
       // remove end-user tags that are now declared as system
       RuleTagHelper.applyTags(dto, ImmutableSet.copyOf(dto.getTags()));
