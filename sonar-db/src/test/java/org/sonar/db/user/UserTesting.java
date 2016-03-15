@@ -47,4 +47,12 @@ public class UserTesting {
       .setCreatedAt(nextLong())
       .setUpdatedAt(nextLong());
   }
+
+  public static UserDto newDisabledUser(String login){
+    return new UserDto()
+      .setLogin(login)
+      .setActive(false)
+      .setCreatedAt(nextLong())
+      .setUpdatedAt(nextLong());
+  }
 }

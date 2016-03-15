@@ -35,12 +35,9 @@ import org.sonar.db.DbSession;
 import org.sonar.db.DbTester;
 import org.sonar.db.user.GroupDao;
 import org.sonar.db.user.GroupDto;
-import org.sonar.db.user.GroupMembershipDao;
 import org.sonar.db.user.GroupMembershipQuery;
 import org.sonar.db.user.UserDao;
 import org.sonar.db.user.UserDto;
-import org.sonar.db.user.UserGroupDao;
-import org.sonar.db.user.UserTokenDao;
 import org.sonar.server.es.EsTester;
 import org.sonar.server.exceptions.BadRequestException;
 import org.sonar.server.exceptions.Message;
@@ -56,31 +53,36 @@ import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.sonar.api.CoreProperties.CORE_AUTHENTICATOR_LOCAL_USERS;
 import static org.sonar.api.CoreProperties.CORE_DEFAULT_GROUP;
-
+import static org.sonar.db.user.UserTesting.newDisabledUser;
+import static org.sonar.db.user.UserTesting.newUserDto;
 
 public class UserUpdaterTest {
 
+  static final long NOW = 1418215735482L;
+  static final long PAST = 1000000000000L;
+
   static final String DEFAULT_LOGIN = "marius";
-  static final String TECHNICAL_USER = "tech_user";
+
   @ClassRule
   public static EsTester es = new EsTester().addDefinitions(new UserIndexDefinition(new Settings()));
-  @Rule
-  public DbTester db = DbTester.create(System2.INSTANCE);
+
   System2 system2 = mock(System2.class);
+
+  @Rule
+  public DbTester db = DbTester.create(system2);
+
+  DbClient dbClient = db.getDbClient();
 
   NewUserNotifier newUserNotifier = mock(NewUserNotifier.class);
 
-  SecurityRealmFactory realmFactory = mock(SecurityRealmFactory.class);
-
   ArgumentCaptor<NewUserHandler.Context> newUserHandler = ArgumentCaptor.forClass(NewUserHandler.Context.class);
 
-  Settings settings;
-  UserDao userDao;
-  GroupDao groupDao;
-  GroupMembershipFinder groupMembershipFinder;
-  DbSession session;
+  Settings settings = new Settings();
+  UserDao userDao = dbClient.userDao();
+  GroupDao groupDao = dbClient.groupDao();
+  GroupMembershipFinder groupMembershipFinder = new GroupMembershipFinder(userDao, dbClient.groupMembershipDao());
+  DbSession session = db.getSession();
   UserIndexer userIndexer;
 
   UserUpdater userUpdater;
@@ -88,24 +90,16 @@ public class UserUpdaterTest {
   @Before
   public void setUp() {
     es.truncateIndices();
-    settings = new Settings();
-    settings.setProperty(CORE_AUTHENTICATOR_LOCAL_USERS, TECHNICAL_USER);
-    session = db.getSession();
-    userDao = new UserDao(db.myBatis(), system2);
-    groupDao = new GroupDao(system2);
-    UserGroupDao userGroupDao = new UserGroupDao();
-    GroupMembershipDao groupMembershipDao = new GroupMembershipDao(db.myBatis());
-    groupMembershipFinder = new GroupMembershipFinder(userDao, groupMembershipDao);
 
-    DbClient dbClient = new DbClient(db.database(), db.myBatis(), userDao, groupDao, userGroupDao, new UserTokenDao());
     userIndexer = (UserIndexer) new UserIndexer(dbClient, es.client()).setEnabled(true);
     userUpdater = new UserUpdater(newUserNotifier, settings, dbClient,
-      userIndexer, system2, realmFactory);
+      userIndexer, system2);
+
+    when(system2.now()).thenReturn(NOW);
   }
 
   @Test
   public void create_user() {
-    when(system2.now()).thenReturn(1418215735482L);
     createDefaultGroup();
 
     boolean result = userUpdater.create(NewUser.create()
@@ -122,6 +116,7 @@ public class UserUpdaterTest {
     assertThat(dto.getEmail()).isEqualTo("user@mail.com");
     assertThat(dto.getScmAccountsAsList()).containsOnly("u1", "u_1", "User 1");
     assertThat(dto.isActive()).isTrue();
+    assertThat(dto.isLocal()).isTrue();
 
     assertThat(dto.getSalt()).isNotNull();
     assertThat(dto.getCryptedPassword()).isNotNull();
@@ -150,6 +145,7 @@ public class UserUpdaterTest {
     UserDto dto = userDao.selectByLogin(session, "user");
     assertThat(dto.getExternalIdentity()).isEqualTo("user");
     assertThat(dto.getExternalIdentityProvider()).isEqualTo("sonarqube");
+    assertThat(dto.isLocal()).isTrue();
   }
 
   @Test
@@ -165,6 +161,7 @@ public class UserUpdaterTest {
     UserDto dto = userDao.selectByLogin(session, "ABCD");
     assertThat(dto.getExternalIdentity()).isEqualTo("user");
     assertThat(dto.getExternalIdentityProvider()).isEqualTo("github");
+    assertThat(dto.isLocal()).isFalse();
   }
 
   @Test
@@ -486,8 +483,11 @@ public class UserUpdaterTest {
 
   @Test
   public void reactivate_user_when_creating_user_with_existing_login() {
-    db.prepareDbUnit(getClass(), "reactivate_user.xml");
-    when(system2.now()).thenReturn(1418215735486L);
+    addUser(newDisabledUser(DEFAULT_LOGIN)
+      .setLocal(false)
+      .setCreatedAt(PAST)
+      .setUpdatedAt(PAST)
+    );
     createDefaultGroup();
 
     boolean result = userUpdater.create(NewUser.create()
@@ -502,11 +502,12 @@ public class UserUpdaterTest {
     assertThat(dto.getName()).isEqualTo("Marius2");
     assertThat(dto.getEmail()).isEqualTo("marius2@mail.com");
     assertThat(dto.getScmAccounts()).isNull();
+    assertThat(dto.isLocal()).isTrue();
 
     assertThat(dto.getSalt()).isNotEqualTo("79bd6a8e79fb8c76ac8b121cc7e8e11ad1af8365");
     assertThat(dto.getCryptedPassword()).isNotEqualTo("650d2261c98361e2f67f90ce5c65a95e7d8ea2fg");
-    assertThat(dto.getCreatedAt()).isEqualTo(1418215735482L);
-    assertThat(dto.getUpdatedAt()).isEqualTo(1418215735486L);
+    assertThat(dto.getCreatedAt()).isEqualTo(PAST);
+    assertThat(dto.getUpdatedAt()).isEqualTo(NOW);
 
     assertThat(result).isTrue();
   }
@@ -539,8 +540,11 @@ public class UserUpdaterTest {
 
   @Test
   public void update_external_provider_when_reactivating_user() {
-    db.prepareDbUnit(getClass(), "reactivate_user.xml");
-    when(system2.now()).thenReturn(1418215735486L);
+    addUser(newDisabledUser(DEFAULT_LOGIN)
+      .setLocal(true)
+      .setCreatedAt(PAST)
+      .setUpdatedAt(PAST)
+    );
     createDefaultGroup();
 
     userUpdater.create(NewUser.create()
@@ -553,6 +557,7 @@ public class UserUpdaterTest {
     UserDto dto = userDao.selectByLogin(session, DEFAULT_LOGIN);
     assertThat(dto.getExternalIdentity()).isEqualTo("john");
     assertThat(dto.getExternalIdentityProvider()).isEqualTo("github");
+    assertThat(dto.isLocal()).isFalse();
   }
 
   @Test
@@ -817,10 +822,13 @@ public class UserUpdaterTest {
   }
 
   @Test
-  public void fail_to_update_password_when_external_auth_is_used() {
-    db.prepareDbUnit(getClass(), "update_user.xml");
+  public void fail_to_update_password_when_user_is_not_local() {
+    UserDto user = newUserDto()
+      .setLogin(DEFAULT_LOGIN)
+      .setLocal(false);
+    userDao.insert(session, user);
+    session.commit();
     createDefaultGroup();
-    when(realmFactory.hasExternalAuthentication()).thenReturn(true);
 
     try {
       userUpdater.update(UpdateUser.create(DEFAULT_LOGIN)
@@ -828,19 +836,6 @@ public class UserUpdaterTest {
     } catch (BadRequestException e) {
       assertThat(e.errors().messages()).containsOnly(Message.of("user.password_cant_be_changed_on_external_auth"));
     }
-  }
-
-  @Test
-  public void update_password_of_technical_user_when_external_auth_is_used() {
-    db.prepareDbUnit(getClass(), "update_technical_user.xml");
-    createDefaultGroup();
-    when(realmFactory.hasExternalAuthentication()).thenReturn(true);
-
-    userUpdater.update(UpdateUser.create(TECHNICAL_USER)
-      .setPassword("password2"));
-
-    UserDto dto = userDao.selectByLogin(session, TECHNICAL_USER);
-    assertThat(dto.getSalt()).isNotEqualTo("79bd6a8e79fb8c76ac8b121cc7e8e11ad1af8365");
   }
 
   @Test
@@ -952,5 +947,11 @@ public class UserUpdaterTest {
     settings.setProperty(CORE_DEFAULT_GROUP, "sonar-users");
     groupDao.insert(session, new GroupDto().setName("sonar-users").setDescription("Sonar Users"));
     session.commit();
+  }
+
+  private UserDto addUser(UserDto user) {
+    userDao.insert(session, user);
+    session.commit();
+    return user;
   }
 }

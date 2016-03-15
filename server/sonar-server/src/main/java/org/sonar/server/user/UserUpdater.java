@@ -49,8 +49,6 @@ import org.sonar.server.user.index.UserIndexer;
 import org.sonar.server.util.Validation;
 
 import static com.google.common.collect.Lists.newArrayList;
-import static java.util.Arrays.asList;
-import static org.sonar.api.CoreProperties.CORE_AUTHENTICATOR_LOCAL_USERS;
 
 @ServerSide
 public class UserUpdater {
@@ -72,17 +70,13 @@ public class UserUpdater {
   private final DbClient dbClient;
   private final UserIndexer userIndexer;
   private final System2 system2;
-  private final SecurityRealmFactory realmFactory;
-  private final List<String> technicalUsers;
 
-  public UserUpdater(NewUserNotifier newUserNotifier, Settings settings, DbClient dbClient, UserIndexer userIndexer, System2 system2, SecurityRealmFactory realmFactory) {
+  public UserUpdater(NewUserNotifier newUserNotifier, Settings settings, DbClient dbClient, UserIndexer userIndexer, System2 system2) {
     this.newUserNotifier = newUserNotifier;
     this.settings = settings;
     this.dbClient = dbClient;
     this.userIndexer = userIndexer;
     this.system2 = system2;
-    this.realmFactory = realmFactory;
-    this.technicalUsers = asList(settings.getStringArray(CORE_AUTHENTICATOR_LOCAL_USERS));
   }
 
   /**
@@ -126,6 +120,8 @@ public class UserUpdater {
     if (newUser.password() != null) {
       updateUser.setPassword(newUser.password());
     }
+    // Hack to allow to change the password of the user
+    existingUser.setLocal(true);
     updateUserDto(dbSession, updateUser, existingUser);
     updateUser(dbSession, existingUser);
     addDefaultGroup(dbSession, existingUser);
@@ -233,7 +229,7 @@ public class UserUpdater {
     String password = updateUser.password();
     if (updateUser.isPasswordChanged()) {
       validatePasswords(password, messages);
-      checkPasswordChangeAllowed(updateUser.login(), messages);
+      checkPasswordChangeAllowed(userDto, messages);
       if (Strings.isNullOrEmpty(password)) {
         userDto.setSalt(null);
         userDto.setCryptedPassword(null);
@@ -252,7 +248,9 @@ public class UserUpdater {
       }
     }
 
-    setExternalIdentity(userDto, updateUser.externalIdentity());
+    if (updateUser.isExternalIdentityChanged()) {
+      setExternalIdentity(userDto, updateUser.externalIdentity());
+    }
 
     if (!messages.isEmpty()) {
       throw new BadRequestException(messages);
@@ -263,9 +261,11 @@ public class UserUpdater {
     if (externalIdentity == null) {
       dto.setExternalIdentity(dto.getLogin());
       dto.setExternalIdentityProvider(SQ_AUTHORITY);
+      dto.setLocal(true);
     } else {
       dto.setExternalIdentity(externalIdentity.getId());
       dto.setExternalIdentityProvider(externalIdentity.getProvider());
+      dto.setLocal(false);
     }
   }
 
@@ -302,8 +302,8 @@ public class UserUpdater {
     }
   }
 
-  private void checkPasswordChangeAllowed(String login, List<Message> messages) {
-    if (realmFactory.hasExternalAuthentication() && !technicalUsers.contains(login)) {
+  private void checkPasswordChangeAllowed(UserDto userDto, List<Message> messages) {
+    if (!userDto.isLocal()) {
       messages.add(Message.of("user.password_cant_be_changed_on_external_auth"));
     }
   }
