@@ -26,7 +26,6 @@ import org.sonar.api.batch.bootstrap.ProjectReactor;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -48,12 +47,12 @@ public class ProjectLockTest {
   public void setUp() {
     lock = setUpTest(tempFolder.getRoot());
   }
-  
+
   private ProjectLock setUpTest(File file) {
     ProjectReactor projectReactor = mock(ProjectReactor.class);
     ProjectDefinition projectDefinition = mock(ProjectDefinition.class);
     when(projectReactor.getRoot()).thenReturn(projectDefinition);
-    when(projectDefinition.getBaseDir()).thenReturn(file);
+    when(projectDefinition.getWorkDir()).thenReturn(file);
 
     return new ProjectLock(projectReactor);
   }
@@ -66,7 +65,7 @@ public class ProjectLockTest {
     assertThat(Files.isRegularFile(lockFilePath)).isTrue();
 
     lock.stop();
-    assertThat(Files.exists(lockFilePath)).isFalse();
+    assertThat(Files.exists(lockFilePath)).isTrue();
   }
 
   @Test
@@ -76,7 +75,7 @@ public class ProjectLockTest {
     lock.tryLock();
     lock.tryLock();
   }
-  
+
   @Test
   /**
    * If there is an error starting up the scan, we'll still try to unlock even if the lock
@@ -94,18 +93,9 @@ public class ProjectLockTest {
     lock.tryLock();
     lock.stop();
   }
-  
+
   @Test
-  public void errorLock() {
-    lock = setUpTest(Paths.get("path", "that", "wont", "exist", "ever").toFile());
-    exception.expect(IllegalStateException.class);
-    exception.expectMessage("Failed to create lock in");
-    lock.tryLock();
-  }
-  
-  @Test
-  public void errorDeleteLock() {
-    lock = setUpTest(Paths.get("path", "that", "wont", "exist", "ever").toFile());
+  public void unLockWithNoLock() {
     lock.stop();
   }
 

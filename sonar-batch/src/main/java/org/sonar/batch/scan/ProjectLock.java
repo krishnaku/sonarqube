@@ -25,7 +25,9 @@ import org.sonar.home.cache.DirectoryLock;
 import org.picocontainer.Startable;
 import org.sonar.api.batch.bootstrap.ProjectReactor;
 
+import java.io.IOException;
 import java.nio.channels.OverlappingFileLockException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class ProjectLock implements Startable {
@@ -34,12 +36,18 @@ public class ProjectLock implements Startable {
   private DirectoryLock lock;
 
   public ProjectLock(ProjectReactor projectReactor) {
-    Path directory = projectReactor.getRoot().getBaseDir().toPath();
+    Path directory = projectReactor.getRoot().getWorkDir().toPath();
+    try {
+      Files.createDirectories(directory);
+    } catch (IOException e) {
+      throw new IllegalStateException("Failed to create work directory", e);
+    }
     this.lock = new DirectoryLock(directory.toAbsolutePath(), new Slf4jLogger());
   }
 
   public void tryLock() {
     try {
+
       if (!lock.tryLock()) {
         failAlreadyInProgress(null);
       }
