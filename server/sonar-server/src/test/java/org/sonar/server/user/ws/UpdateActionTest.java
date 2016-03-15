@@ -43,7 +43,6 @@ import org.sonar.server.tester.UserSessionRule;
 import org.sonar.server.user.NewUserNotifier;
 import org.sonar.server.user.SecurityRealmFactory;
 import org.sonar.server.user.UserUpdater;
-import org.sonar.server.user.index.UserIndex;
 import org.sonar.server.user.index.UserIndexDefinition;
 import org.sonar.server.user.index.UserIndexer;
 import org.sonar.server.ws.WsTester;
@@ -68,8 +67,6 @@ public class UpdateActionTest {
 
   WsTester tester;
 
-  UserIndex index;
-
   DbClient dbClient;
 
   UserIndexer userIndexer;
@@ -91,8 +88,7 @@ public class UpdateActionTest {
     session.commit();
 
     userIndexer = (UserIndexer) new UserIndexer(dbClient, esTester.client()).setEnabled(true);
-    index = new UserIndex(esTester.client());
-    tester = new WsTester(new UsersWs(new UpdateAction(index,
+    tester = new WsTester(new UsersWs(new UpdateAction(
       new UserUpdater(mock(NewUserNotifier.class), settings, dbClient, userIndexer, system2, mock(SecurityRealmFactory.class)), userSessionRule,
       new UserJsonWriter(userSessionRule), dbClient)));
     controller = tester.controller("api/users");

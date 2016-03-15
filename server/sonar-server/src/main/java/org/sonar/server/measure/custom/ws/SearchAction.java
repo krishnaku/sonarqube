@@ -31,7 +31,6 @@ import javax.annotation.Nullable;
 import org.sonar.api.server.ws.Request;
 import org.sonar.api.server.ws.Response;
 import org.sonar.api.server.ws.WebService;
-import org.sonar.api.user.User;
 import org.sonar.api.utils.text.JsonWriter;
 import org.sonar.db.DbClient;
 import org.sonar.db.DbSession;
@@ -40,6 +39,7 @@ import org.sonar.db.component.ComponentDto;
 import org.sonar.db.component.SnapshotDto;
 import org.sonar.db.measure.custom.CustomMeasureDto;
 import org.sonar.db.metric.MetricDto;
+import org.sonar.db.user.UserDto;
 import org.sonar.server.component.ComponentFinder;
 import org.sonar.server.es.SearchOptions;
 import org.sonar.server.user.UserSession;
@@ -107,7 +107,7 @@ public class SearchAction implements CustomMeasuresWsAction {
       Long lastAnalysisDateMs = searchLastSnapshot(dbSession, project);
       List<CustomMeasureDto> customMeasures = searchCustomMeasures(dbSession, project, searchOptions);
       int nbCustomMeasures = countTotalOfCustomMeasures(dbSession, project);
-      Map<String, User> usersByLogin = usersByLogin(customMeasures);
+      Map<String, UserDto> usersByLogin = usersByLogin(dbSession, customMeasures);
       Map<Integer, MetricDto> metricsById = metricsById(dbSession, customMeasures);
 
       writeResponse(response, customMeasures, nbCustomMeasures, project, metricsById, usersByLogin, lastAnalysisDateMs, searchOptions, fieldsToReturn);
@@ -132,7 +132,7 @@ public class SearchAction implements CustomMeasuresWsAction {
   }
 
   private void writeResponse(Response response, List<CustomMeasureDto> customMeasures, int nbCustomMeasures, ComponentDto project, Map<Integer, MetricDto> metricsById,
-                             Map<String, User> usersByLogin, @Nullable Long lastAnalysisDate, SearchOptions searchOptions, List<String> fieldsToReturn) {
+    Map<String, UserDto> usersByLogin, @Nullable Long lastAnalysisDate, SearchOptions searchOptions, List<String> fieldsToReturn) {
     JsonWriter json = response.newJsonWriter();
     json.beginObject();
     customMeasureJsonWriter.write(json, customMeasures, project, metricsById, usersByLogin, lastAnalysisDate, fieldsToReturn);
@@ -146,10 +146,12 @@ public class SearchAction implements CustomMeasuresWsAction {
     return Maps.uniqueIndex(metrics, MetricToIdFunction.INSTANCE);
   }
 
-  private Map<String, User> usersByLogin(List<CustomMeasureDto> customMeasures) {
-    return FluentIterable.from(customMeasures)
+  private Map<String, UserDto> usersByLogin(DbSession dbSession, List<CustomMeasureDto> customMeasures) {
+    List<String> logins = FluentIterable.from(customMeasures)
       .transform(CustomMeasureToUserLoginFunction.INSTANCE)
-      .toMap(new UserLoginToUserFunction());
+      .toList();
+    List<UserDto> userDtos = dbClient.userDao().selectByLogins(dbSession, logins);
+    return FluentIterable.from(userDtos).uniqueIndex(UserDtoToLogin.INSTANCE);
   }
 
   private enum CustomMeasureToUserLoginFunction implements Function<CustomMeasureDto, String> {
@@ -161,10 +163,12 @@ public class SearchAction implements CustomMeasuresWsAction {
     }
   }
 
-  private final class UserLoginToUserFunction implements Function<String, User> {
+  private enum UserDtoToLogin implements Function<UserDto, String> {
+    INSTANCE;
+
     @Override
-    public User apply(@Nonnull String userLogin) {
-      return userIndex.getByLogin(userLogin);
+    public String apply(@Nonnull UserDto input) {
+      return input.getLogin();
     }
   }
 

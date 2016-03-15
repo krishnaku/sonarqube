@@ -20,10 +20,14 @@
 package org.sonar.db.user;
 
 import com.google.common.base.Function;
+import com.google.common.base.Predicates;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import org.apache.ibatis.session.SqlSession;
 import org.sonar.api.user.UserQuery;
 import org.sonar.api.utils.System2;
@@ -32,6 +36,8 @@ import org.sonar.db.DatabaseUtils;
 import org.sonar.db.DbSession;
 import org.sonar.db.MyBatis;
 import org.sonar.db.RowNotFoundException;
+
+import static com.google.common.collect.FluentIterable.from;
 
 public class UserDao implements Dao {
 
@@ -92,6 +98,17 @@ public class UserDao implements Dao {
     } finally {
       MyBatis.closeQuietly(session);
     }
+  }
+
+  /**
+   * Gets a list users by their logins. The result does NOT contain {@code null} values for users not found, so
+   * the size of result may be less than the number of keys.
+   * A single user is returned if input keys contain multiple occurrences of a key.
+   * <p>Contrary to {@link #selectByLogins(DbSession, Collection)}, results are in the same order as input keys.</p>
+   */
+  public List<UserDto> selectByOrderedLogins(DbSession session, Collection<String> logins) {
+    List<UserDto> unordered = selectByLogins(session, logins);
+    return from(logins).transform(new LoginToUser(unordered)).filter(Predicates.notNull()).toList();
   }
 
   private static class SelectByLogins implements Function<List<String>, List<UserDto>> {
@@ -187,5 +204,21 @@ public class UserDao implements Dao {
 
   protected UserMapper mapper(DbSession session) {
     return session.getMapper(UserMapper.class);
+  }
+
+  private static class LoginToUser implements Function<String, UserDto> {
+    private final Map<String, UserDto> map = new HashMap<>();
+
+    private LoginToUser(Collection<UserDto> unordered) {
+      for (UserDto dto : unordered) {
+        map.put(dto.getLogin(), dto);
+      }
+    }
+
+    @Nullable
+    @Override
+    public UserDto apply(@Nonnull String login) {
+      return map.get(login);
+    }
   }
 }

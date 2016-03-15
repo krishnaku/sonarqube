@@ -20,7 +20,6 @@
 package org.sonar.server.measure.custom.ws;
 
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -38,12 +37,12 @@ import org.sonar.db.component.ComponentTesting;
 import org.sonar.db.measure.custom.CustomMeasureDto;
 import org.sonar.db.metric.MetricDto;
 import org.sonar.db.metric.MetricTesting;
+import org.sonar.db.user.UserDto;
 import org.sonar.server.es.EsTester;
 import org.sonar.server.exceptions.ForbiddenException;
 import org.sonar.server.exceptions.ServerException;
 import org.sonar.server.exceptions.UnauthorizedException;
 import org.sonar.server.tester.UserSessionRule;
-import org.sonar.server.user.index.UserDoc;
 import org.sonar.server.user.index.UserIndex;
 import org.sonar.server.user.index.UserIndexDefinition;
 import org.sonar.server.user.ws.UserJsonWriter;
@@ -74,15 +73,6 @@ public class UpdateActionTest {
   System2 system = mock(System2.class);
   WsTester ws;
 
-  @BeforeClass
-  public static void setUpClass() throws Exception {
-    es.putDocuments(UserIndexDefinition.INDEX, UserIndexDefinition.TYPE_USER, new UserDoc()
-      .setLogin("login")
-      .setName("Login")
-      .setEmail("login@login.com")
-      .setActive(true));
-  }
-
   @Before
   public void setUp() {
     CustomMeasureValidator validator = new CustomMeasureValidator(newFullTypeValidations());
@@ -90,6 +80,14 @@ public class UpdateActionTest {
     ws = new WsTester(new CustomMeasuresWs(new UpdateAction(dbClient, userSessionRule, system, validator, new CustomMeasureJsonWriter(new UserJsonWriter(userSessionRule)),
       new UserIndex(es.client()))));
     userSessionRule.login("login").setGlobalPermissions(GlobalPermissions.SYSTEM_ADMIN);
+
+    db.getDbClient().userDao().insert(dbSession, new UserDto()
+      .setLogin("login")
+      .setName("Login")
+      .setEmail("login@login.com")
+      .setActive(true)
+    );
+    dbSession.commit();
   }
 
   @Test

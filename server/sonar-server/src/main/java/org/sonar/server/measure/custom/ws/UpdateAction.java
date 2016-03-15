@@ -23,7 +23,6 @@ import javax.annotation.Nullable;
 import org.sonar.api.server.ws.Request;
 import org.sonar.api.server.ws.Response;
 import org.sonar.api.server.ws.WebService;
-import org.sonar.api.user.User;
 import org.sonar.api.utils.System2;
 import org.sonar.api.utils.text.JsonWriter;
 import org.sonar.db.DbClient;
@@ -32,6 +31,7 @@ import org.sonar.db.MyBatis;
 import org.sonar.db.component.ComponentDto;
 import org.sonar.db.measure.custom.CustomMeasureDto;
 import org.sonar.db.metric.MetricDto;
+import org.sonar.db.user.UserDto;
 import org.sonar.server.user.UserSession;
 import org.sonar.server.user.index.UserIndex;
 
@@ -96,11 +96,11 @@ public class UpdateAction implements CustomMeasuresWsAction {
       MetricDto metric = dbClient.metricDao().selectOrFailById(dbSession, customMeasure.getMetricId());
       ComponentDto component = dbClient.componentDao().selectOrFailByUuid(dbSession, customMeasure.getComponentUuid());
       checkPermissions(userSession, component);
-      User user = userIndex.getByLogin(userSession.getLogin());
+      UserDto user = dbClient.userDao().selectOrFailByLogin(dbSession, userSession.getLogin());
 
       setValue(customMeasure, value, metric);
       setDescription(customMeasure, description);
-      customMeasure.setUserLogin(user.login());
+      customMeasure.setUserLogin(user.getLogin());
       customMeasure.setUpdatedAt(system.now());
       dbClient.customMeasureDao().update(dbSession, customMeasure);
       dbSession.commit();

@@ -30,6 +30,7 @@ import org.sonar.core.permission.GlobalPermissions;
 import org.sonar.db.DbClient;
 import org.sonar.db.DbSession;
 import org.sonar.db.DbTester;
+import org.sonar.db.RowNotFoundException;
 import org.sonar.db.user.GroupMembershipDao;
 import org.sonar.db.user.UserDao;
 import org.sonar.db.user.UserDto;
@@ -37,7 +38,6 @@ import org.sonar.db.user.UserTokenDao;
 import org.sonar.server.es.EsTester;
 import org.sonar.server.exceptions.BadRequestException;
 import org.sonar.server.exceptions.ForbiddenException;
-import org.sonar.server.exceptions.NotFoundException;
 import org.sonar.server.tester.UserSessionRule;
 import org.sonar.server.user.NewUserNotifier;
 import org.sonar.server.user.SecurityRealmFactory;
@@ -51,7 +51,6 @@ import org.sonar.server.ws.WsTester;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.sonar.db.user.UserTokenTesting.newUserToken;
-
 
 public class DeactivateActionTest {
 
@@ -84,11 +83,10 @@ public class DeactivateActionTest {
 
     userIndexer = (UserIndexer) new UserIndexer(dbClient, esTester.client()).setEnabled(true);
     index = new UserIndex(esTester.client());
-    ws = new WsTester(new UsersWs(new DeactivateAction(index,
+    ws = new WsTester(new UsersWs(new DeactivateAction(
       new UserUpdater(mock(NewUserNotifier.class), settings, dbClient, userIndexer, system2, mock(SecurityRealmFactory.class)), userSessionRule,
       new UserJsonWriter(userSessionRule), dbClient)));
     controller = ws.controller("api/users");
-
   }
 
   @Test
@@ -127,7 +125,7 @@ public class DeactivateActionTest {
       .setParam("login", "john").execute();
   }
 
-  @Test(expected = NotFoundException.class)
+  @Test(expected = RowNotFoundException.class)
   public void fail_on_unknown_user() throws Exception {
     userSessionRule.login("admin").setGlobalPermissions(GlobalPermissions.SYSTEM_ADMIN);
     ws.newPostRequest("api/users", "deactivate")

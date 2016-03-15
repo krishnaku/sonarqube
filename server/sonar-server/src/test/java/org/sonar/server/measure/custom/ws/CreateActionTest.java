@@ -23,7 +23,6 @@ import java.util.List;
 import org.assertj.core.data.Offset;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
@@ -43,6 +42,7 @@ import org.sonar.db.component.ComponentTesting;
 import org.sonar.db.measure.custom.CustomMeasureDto;
 import org.sonar.db.metric.MetricDto;
 import org.sonar.db.metric.MetricTesting;
+import org.sonar.db.user.UserDto;
 import org.sonar.server.component.ComponentFinder;
 import org.sonar.server.es.EsTester;
 import org.sonar.server.exceptions.BadRequestException;
@@ -50,7 +50,6 @@ import org.sonar.server.exceptions.ForbiddenException;
 import org.sonar.server.exceptions.NotFoundException;
 import org.sonar.server.exceptions.ServerException;
 import org.sonar.server.tester.UserSessionRule;
-import org.sonar.server.user.index.UserDoc;
 import org.sonar.server.user.index.UserIndex;
 import org.sonar.server.user.index.UserIndexDefinition;
 import org.sonar.server.user.ws.UserJsonWriter;
@@ -90,21 +89,20 @@ public class CreateActionTest {
 
   WsTester ws;
 
-  @BeforeClass
-  public static void setUpClass() throws Exception {
-    es.putDocuments(UserIndexDefinition.INDEX, UserIndexDefinition.TYPE_USER, new UserDoc()
-      .setLogin("login")
-      .setName("Login")
-      .setEmail("login@login.com")
-      .setActive(true));
-  }
-
   @Before
   public void setUp() {
     ws = new WsTester(new CustomMeasuresWs(new CreateAction(dbClient, userSession, System2.INSTANCE, new CustomMeasureValidator(newFullTypeValidations()),
       new CustomMeasureJsonWriter(new UserJsonWriter(userSession)), new UserIndex(es.client()), new ComponentFinder(dbClient))));
     db.truncateTables();
     userSession.login("login").setGlobalPermissions(GlobalPermissions.SYSTEM_ADMIN);
+
+    db.getDbClient().userDao().insert(dbSession, new UserDto()
+      .setLogin("login")
+      .setName("Login")
+      .setEmail("login@login.com")
+      .setActive(true)
+    );
+    dbSession.commit();
   }
 
   @After
